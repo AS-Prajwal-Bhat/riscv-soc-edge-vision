@@ -1,0 +1,7 @@
+*.vcd
+*.fst
+*.wdb
+*.log
+*.jou
+.Xil/
+xsim.dir/
