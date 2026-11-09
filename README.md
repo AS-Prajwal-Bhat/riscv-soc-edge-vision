@@ -1,161 +1,184 @@
 # RISC-V SoC for Edge Image Classification
 
-A 5-stage pipelined RISC-V core with memory-mapped peripherals and hardware DCT and CNN accelerators, written in Verilog. An image is received over UART, processed in hardware, and the classification result is sent back over UART.
+A Verilog-based system-on-chip integrating a five-stage RISC-V processor with dedicated hardware accelerators for image preprocessing and classification.
 
-![HDL](https://img.shields.io/badge/HDL-Verilog-lightgrey?style=flat-square)
-![ISA](https://img.shields.io/badge/ISA-RISC--V-lightgrey?style=flat-square)
-![Simulation](https://img.shields.io/badge/Simulation-XSim%20%7C%20Icarus-lightgrey?style=flat-square)
-![Status](https://img.shields.io/badge/Status-in%20development-lightgrey?style=flat-square)
+The system accepts a 32 × 32 grayscale image over UART, stores image data in shared memory, performs block-based Discrete Cosine Transform (DCT), and executes a quantized CNN inference pipeline. The predicted class is returned over UART and displayed through the seven-segment interface.
 
-## Contents
+## System Overview
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Dataflow](#dataflow)
-- [Repository layout](#repository-layout)
-- [Running the simulation](#running-the-simulation)
-- [Results](#results)
-- [Debugging notes](#debugging-notes)
-- [Roadmap](#roadmap)
-
-## Overview
-
-| Item | Detail |
-|:--|:--|
-| Core | 5-stage pipeline: IF, ID, EX, MEM, WB |
-| Peripherals | UART (baud period 8680 ns), shared BRAM, MMIO |
-| Accelerators | DCT engine, CNN engine using LeNet-5 weights |
-| Firmware | Polls UART over MMIO, stores the image in BRAM, starts the accelerators, returns the result |
-| Verification | Vivado XSim on Windows, Icarus Verilog on Linux |
+| Component | Implementation |
+|---|---|
+| Processor | 32-bit, five-stage RISC-V pipeline |
+| Pipeline | Instruction Fetch, Decode, Execute, Memory, Writeback |
+| Hazard handling | Operand forwarding, stalls and pipeline flushes |
+| Image input | UART, 115200 baud |
+| Preprocessing | Hardware 8 × 8 DCT |
+| Classification | Fixed-point, quantized LeNet-5-inspired CNN |
+| Memory | Shared BRAM with CPU and accelerator arbitration |
+| Control | Memory-mapped I/O and frame controller |
+| Output | UART classification result and seven-segment display |
+| HDL | Verilog |
+| FPGA constraints | Real Digital Blackboard Rev D constraint file included |
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    PC([Host PC]) -- image bytes --> RX[UART RX]
-    RX --> BRAM[(Shared BRAM)]
-    CPU{{RISC-V core}} <-- MMIO --> RX
-    CPU <-- MMIO --> BRAM
-    BRAM --> DCT[DCT accelerator]
-    DCT --> CNN[CNN accelerator]
-    CNN --> TX[UART TX]
-    TX -- class result --> PC
-    CPU -. start and poll .-> DCT
-    CPU -. start and poll .-> CNN
-```
+The SoC combines a general-purpose processor with hardware blocks dedicated to the image-processing workload.
 
-Core pipeline:
+### Processor
 
-```mermaid
-flowchart LR
-    IF[IF] --> ID[ID] --> EX[EX] --> MEM[MEM] --> WB[WB]
-    EX -. branch and jump redirect .-> IF
-    MEM -. MMIO and BRAM stall .-> IF
-```
+The processor implements a five-stage pipeline:
 
-Hazard handling covers operand forwarding, load-use stalls, branch and jump flushes, and stall freezes for MMIO and shared-BRAM accesses.
+`IF → ID → EX → MEM → WB`
 
-## Dataflow
+The RTL includes:
 
-```mermaid
-sequenceDiagram
-    participant H as Host PC
-    participant U as UART
-    participant C as RISC-V core
-    participant B as Shared BRAM
-    participant D as DCT
-    participant N as CNN
-    H->>U: image bytes
-    C->>U: poll status (MMIO)
-    C->>B: store received bytes
-    C->>D: start DCT
-    D->>B: write DCT output
-    C->>N: start CNN
-    N-->>C: class result
-    C->>U: transmit result
-    U-->>H: predicted class
-```
+- Instruction decoding and register-file access.
+- Arithmetic and logic operations.
+- Branch and jump handling.
+- Operand forwarding between pipeline stages.
+- Load-use hazard handling.
+- Pipeline stalls and flushes.
+- Memory-mapped peripheral access.
 
-## Repository layout
+### DCT Accelerator
+
+The DCT engine processes an image as a grid of sixteen 8 × 8 blocks.
+
+The frame controller configures the input and output addresses and strides for each block, starts the DCT operation and monitors its completion before advancing to the next block.
+
+### CNN Accelerator
+
+The CNN accelerator implements a fixed-point inference datapath with quantized weights.
+
+The RTL contains the following network structure:
+
+| Layer | Output dimensions |
+|---|---:|
+| Input | 32 × 32 |
+| Convolution 1 | 28 × 28 × 6 |
+| Pooling 1 | 14 × 14 × 6 |
+| Convolution 2 | 10 × 10 × 16 |
+| Pooling 2 | 5 × 5 × 16 |
+| Fully connected 1 | 120 |
+| Fully connected 2 | 84 |
+| Fully connected 3 | 10 classes |
+
+The accelerator reads its parameters from a dedicated weight ROM and uses shared memory for intermediate activation data.
+
+### SoC Integration
+
+The top-level design integrates:
+
+- RISC-V processor
+- MMIO controller
+- UART peripheral
+- DCT accelerator
+- CNN accelerator
+- Frame controller
+- Shared BRAM and accelerator arbiter
+- CNN weight ROM
+- GPIO debug outputs
+- Seven-segment display controller
+
+The frame controller sequences the complete block-processing operation and subsequently invokes CNN inference.
+
+## Image Processing Flow
+
+1. A host sends 1,024 grayscale pixel bytes through UART.
+2. The processor and memory-mapped peripherals handle incoming data and memory transfers.
+3. The frame controller schedules the sixteen 8 × 8 DCT operations.
+4. The DCT coefficients are stored in shared memory.
+5. The CNN accelerator processes the transformed frame.
+6. The predicted class is made available to the system.
+7. The classification result is transmitted through UART and presented on the seven-segment display.
+
+## Repository Structure
 
 ```text
-mjp_final/
+riscv-soc-edge-vision/
 ├── rtl/
-│   ├── riscv_core_pkg.v    pipeline registers, memories, data_memory
-│   ├── <core>.v            5-stage RISC-V core
-│   ├── riscv_soc.v         top-level integration
-│   ├── accelerators.v      DCT and CNN accelerators
-│   └── peripherals.v       UART
+│   ├── riscv_core.v
+│   ├── riscv_core_pkg.v
+│   ├── riscv_soc.v
+│   ├── accelerators.v
+│   ├── peripherals.v
+│   └── seg7_display.v
 ├── tb/
-│   └── tb_riscv_soc.v      system testbench
-├── sw/
-│   ├── firmware.hex        loaded with $readmemh
-│   └── lenet5_weights.hex  CNN weights
-└── README.md
+│   └── tb_riscv_soc.v
+├── mem/
+│   ├── firmware.hex
+│   ├── lenet5_weights.hex
+│   └── digit5_32x32.hex
+├── constraints/
+│   └── riscv_soc.xdc
+├── docs/
+│   └── digit5_preview.png
+└── .gitignore
 ```
 
-## Running the simulation
+## Simulation
 
-Icarus Verilog:
+The repository contains a system-level testbench intended to exercise the image-transfer and inference flow.
 
-```bash
-iverilog -o soc_sim rtl/*.v tb/tb_riscv_soc.v
-vvp soc_sim
-```
+### Requirements
 
-Vivado XSim:
+- Xilinx Vivado Simulator (XSim), or a compatible Verilog simulator.
+- The RTL source files.
+- The firmware, CNN weight and sample image memory files.
 
-1. Create a project and add the files in `rtl/` as design sources.
-2. Add `tb/tb_riscv_soc.v` as the simulation source.
-3. Keep `firmware.hex` and `lenet5_weights.hex` reachable by `$readmemh`.
-4. Run behavioral simulation.
+### Vivado setup
 
-## Results
+1. Create a Vivado project.
+2. Add all Verilog files under `rtl/` as design sources.
+3. Set `riscv_soc` as the synthesis top.
+4. Add `tb/tb_riscv_soc.v` as a simulation source.
+5. Set `tb_riscv_soc` as the simulation top.
+6. Make the three files in `mem/` available in the simulator's working directory, because the current `$readmemh` calls use filenames rather than repository-relative paths.
+7. Run behavioral simulation.
 
-Not yet measured. This table will be filled in from synthesis and simulation runs.
+The testbench uses `digit5_32x32.hex` as its sample input. Note that the testbench also contains a reference to `dog_32x32.hex`; that additional image is not included in the current repository.
 
-| Metric | Value |
-|:--|:--|
-| Target board and part | to be added |
-| Vivado version | to be added |
-| LUT / FF / DSP / BRAM | to be added |
-| Maximum clock frequency | to be added |
-| Cycles per inference | to be added |
-| LeNet-5 accuracy | to be added |
+## Verification Evidence
 
-## Debugging notes
+The testbench implements a UART-to-classification simulation sequence:
 
-Bugs found during bring-up, each isolated from waveforms and cross-checked between XSim and Icarus.
+- Reset and processor startup.
+- Transmission of a 1,024-byte image.
+- DCT and CNN execution.
+- Reception of a classification byte over UART.
+- A timeout watchdog and diagnostic signal monitors.
 
-<details>
-<summary>JAL and JALR target</summary>
+A recorded project simulation is reported to have returned class `5` for the supplied digit-five image.
 
-The jump target was selected using an ALU control code shared by JAL and JALR, so JAL used a register value instead of `ex_pc + imm`. Fix: decode `id_is_jalr` from the opcode in ID, pipeline it as `ex_is_jalr`, and use it in the `branch_target` mux.
-</details>
+This is a sample-based functional demonstration, not a statistical evaluation of classification accuracy. No dataset-wide accuracy, throughput, power or FPGA timing figures are claimed here.
 
-<details>
-<summary>MMIO and shared-BRAM stall race</summary>
+## FPGA Implementation
 
-`mmio_stall` asserted one cycle late, so EX/MEM advanced and overwrote results before the freeze took effect. Fix: a combinational `mmio_start` wire ORed into the stall, plus a `mmio_just_done` guard to prevent a retrigger deadlock on release. The shared-BRAM path uses the same pattern with `shared_stall` and `shared_just_done`.
-</details>
+The repository includes an XDC file identifying the target as the Real Digital Blackboard Rev D, using device `xc7z007sclg400-1`.
 
-<details>
-<summary>Instruction fetch and PC misalignment</summary>
+The RTL selects a 75 MHz system clock in synthesis and a 100 MHz pass-through clock in simulation. The clocking and timing constraints should be checked against the final Vivado implementation before treating the design as timing-closed.
 
-A synchronous instruction-memory read made `instr_o` lag `pc` by one cycle, which dropped instructions under stall. Fix: combinational read using distributed RAM.
-</details>
+Synthesis utilization, achieved clock frequency and implementation results are not included because a verified final implementation report is not currently part of this repository.
 
-Takeaways: a stall that depends on a registered signal leaves a one-cycle window where stages advance incorrectly, jump type must be decoded from the opcode, and waveforms should be checked before changing logic.
+## Current Limitations
 
-## Roadmap
+- The published repository does not yet include a complete Vivado project with project configuration and generated implementation reports.
+- Simulation memory-file paths require working-directory configuration.
+- The optional second test image referenced by the testbench is not included.
+- Classification performance has not been established through a dataset-wide evaluation.
+- FPGA resource utilization and timing closure remain to be documented from a reproducible implementation run.
 
-- [x] 5-stage core, UART, shared BRAM, MMIO
-- [x] Fixes for JAL/JALR, stall races and fetch alignment
-- [ ] End-to-end UART, DCT, CNN, UART verification
-- [ ] FPGA synthesis and implementation
-- [ ] Timing and resource report
-- [ ] Accuracy measurement
+## Future Work
+
+- Make simulation setup reproducible with explicit memory-file paths.
+- Add automated regression tests for processor, peripheral and accelerator behavior.
+- Validate classifications against a software reference implementation.
+- Evaluate accuracy over a representative image dataset.
+- Add synthesis and implementation reports.
+- Measure inference latency, operating frequency and resource utilization.
 
 ## Author
 
-A S Prajwal Bhat. [GitHub](https://github.com/AS-Prajwal-Bhat)
+**A S Prajwal Bhat**
+
+[GitHub](https://github.com/AS-Prajwal-Bhat) · [Portfolio](https://as-prajwal-bhat.github.io/AS_Prajwal_Bhat/)
