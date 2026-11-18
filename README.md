@@ -1,267 +1,178 @@
-<div align="center">
+<p align="center"><img src="docs/banner.svg" alt="Pipelined RISC-V SoC for Edge Vision Intelligence" width="100%"></p>
 
-# RISC-V SoC for Edge Image Classification
+<p align="center">
+  <img alt="Verilog" src="https://img.shields.io/badge/Verilog-RTL-4ade80?style=flat-square&labelColor=060d0a">
+  <img alt="Vivado" src="https://img.shields.io/badge/Vivado-xsim%20%2B%20synthesis-4ade80?style=flat-square&labelColor=060d0a">
+  <img alt="Board" src="https://img.shields.io/badge/Board-Blackboard%20Zynq--7007S-4ade80?style=flat-square&labelColor=060d0a">
+  <img alt="Status" src="https://img.shields.io/badge/Status-verified%20on%20FPGA-4ade80?style=flat-square&labelColor=060d0a">
+</p>
 
-**A 5-stage pipelined RISC-V core with memory-mapped peripherals, a frame controller, and hardware DCT and LeNet-5-inspired CNN accelerators, written in Verilog and targeting the Real Digital Blackboard.**
+# Pipelined RISC-V SoC for Edge Vision Intelligence
 
-An image is loaded, processed in hardware, and a predicted class is produced.
+A 5-stage RV32I processor, an 8x8 DCT accelerator and a LeNet-5 CNN accelerator on one chip. A host sends a 32x32 grayscale image over UART. The SoC runs the DCT on 16 blocks, feeds the coefficients to the CNN, and returns the predicted digit as a UART byte and on a 7-segment display.
 
-![HDL](https://img.shields.io/badge/HDL-Verilog-1f6feb?style=for-the-badge)
-![ISA](https://img.shields.io/badge/ISA-RISC--V%20RV32I%20subset-orange?style=for-the-badge)
-![Board](https://img.shields.io/badge/Board-Real%20Digital%20Blackboard%20Rev%20D-2ea043?style=for-the-badge)
-![FPGA](https://img.shields.io/badge/FPGA-Zynq--7000%20XC7Z007S-red?style=for-the-badge)
-![Clock](https://img.shields.io/badge/System%20clock-75%20MHz%20configured-lightgrey?style=for-the-badge)
-![Sim](https://img.shields.io/badge/Simulation-Vivado%20XSim-8957e5?style=for-the-badge)
+B.E. major project, Department of ECE, BIT Bengaluru.
 
-[Overview](#-overview) •
-[Architecture](#-architecture) •
-[Memory map](#-memory-map) •
-[Accelerators](#-accelerators) •
-[Layout](#-repository-layout) •
-[Simulation](#-running-the-simulation) •
-[Results](#-results) •
-[Debug log](#-debugging-notes) •
-[Roadmap](#-roadmap)
+## Result on hardware
 
-</div>
+The design runs on a Real Digital Blackboard (Zynq-7007S). The test image `mem/digit5_32x32.hex` is sent from a PC with `sw/fpga_test.py`. The SoC answers with class 5, and the 7-segment display shows 5.
 
----
+<p align="center"><img src="docs/board_result.jpg" alt="Blackboard showing 5 on the 7-segment display" width="48%"> <img src="docs/waveform.png" alt="xsim waveform" width="48%"></p>
 
-## ✨ Overview
+| Check | Result |
+|---|---|
+| Simulation (Vivado xsim, digit 3 image) | `received_byte = 03` |
+| FPGA (digit 5 image, COM8) | class 5, shown on 7-segment |
+| Clock | 75 MHz from an MMCM, 100 MHz board clock in |
 
-| | |
-|:--|:--|
-| **Target** | Real Digital Blackboard Rev D, Xilinx Zynq-7000 XC7Z007S-CLG400 (programmable logic only) |
-| **Core** | 5-stage pipeline (IF, ID, EX, MEM, WB) with forwarding, hazard detection and a multiply unit |
-| **Peripherals** | UART, GPIO, 7-segment display, MMIO controller |
-| **Memories** | CPU instruction and data memories, shared BRAM, separate weight ROM |
-| **Accelerators** | DCT engine and LeNet-5-inspired CNN engine, orchestrated by a frame controller |
-| **Verification** | Vivado XSim behavioral simulation with a recorded digit-5 sample |
+Resource utilisation, timing slack, power and inference latency are not reported here yet. They will be added from the Vivado reports.
 
----
+## How it works
 
-## 🏗 Architecture
+1. The host streams 1024 bytes (one 32x32 image) over UART at 115200 baud.
+2. Firmware on the RV32I core copies the bytes into the shared BRAM and writes one trigger to the frame controller.
+3. The frame controller runs the 8x8 DCT over a 4x4 grid of blocks. Each block is a row pass then a column pass, with a Q8.8 cosine table. Coefficients are stored as 16-bit values, two per word.
+4. The 32x32 coefficient frame goes straight to the CNN: conv1 (6 @ 5x5), average pool, conv2 (16 @ 5x5), average pool, then FC 400-120-84-10 and an argmax.
+5. The class is written to the UART and latched on the 7-segment display.
 
-```mermaid
-flowchart LR
-    HOST([Host / image data]) --> UART[UART]
-    UART <-- MMIO --> CPU{{RISC-V core}}
-    CPU -- MMIO --> FRAME[Frame controller]
-    FRAME -. start / poll .-> DCT[DCT accelerator]
-    FRAME -. start / poll .-> CNN[CNN accelerator]
-    CPU -- write image --> ARB{BRAM arbiter}
-    DCT <--> ARB
-    CNN <--> ARB
-    ARB <--> BRAM[(Shared BRAM)]
-    ROM[(Weight ROM)] --> CNN
-    CNN -- class --> CPU
-    CPU --> SEG[7-seg / LEDs]
-```
+Weights are int8, stored sign-extended in a 65,536-deep ROM (61,706 words used) loaded from `mem/lenet5_weights.hex`. Each layer has its own requantisation constant, with a pipelined requantiser (`RQ_SHIFT = 24`).
 
-**Shared BRAM priority:** CPU/DMA port first, then DCT, then CNN.
+## Architecture
 
-### Core pipeline
+<p align="center"><img src="docs/architecture.svg" alt="SoC block diagram" width="100%"></p>
 
-```mermaid
-flowchart LR
-    IF[IF] --> ID[ID] --> EX[EX] --> MEM[MEM] --> WB[WB]
-    EX -. branch / jump redirect .-> IF
-    MEM -. MMIO / shared-BRAM stall .-> IF
-```
+| Block | File | Notes |
+|---|---|---|
+| RV32I core | `rtl/riscv_core.v`, `rtl/riscv_core_pkg.v` | 5 stages, forwarding, hazard detection, MUL/MULH/MULHSU/MULHU/DIV, MMIO stall logic |
+| SoC top | `rtl/riscv_soc.v` | MMCM, MMIO controller, DMA window, frame controller, instruction and weight memories |
+| Accelerators | `rtl/accelerators.v` | `dct_accelerator`, `cnn_accelerator`, `bram_arbiter`, `frame_controller`, `sdp_ram` |
+| Peripherals | `rtl/peripherals.v` | UART, MMIO controller, GPIO, debug LEDs |
+| Display | `rtl/seg7_display.v` | latches the predicted digit, rightmost digit only |
 
-**Hazard handling**
+The shared BRAM is 4096 x 32, true dual port. The CPU and DMA side has priority over the accelerators.
 
-- Operand forwarding from MEM and WB into EX
-- Load-use stall, extended to cover multi-cycle MMIO reads
-- Multiply/divide stall while the unit is busy
-- Branch and jump flush of IF/ID
-- A MEM-stage stall freezes all five pipeline stages
-
----
-
-## 🗺 Memory map
+## Memory map
 
 | Region | Address | Notes |
-|:--|:--|:--|
-| Private CPU memory | `0x0000_0000` – `0x3FFF_FFFF` | CPU data BRAM, separate from the instruction memory |
+|---|---|---|
+| Private CPU memory | `0x0000_0000` to `0x3FFF_FFFF` | CPU data memory, separate from instruction memory |
 | DCT registers | `0x4000_0000` | MMIO |
 | CNN registers | `0x4000_0100` | MMIO |
 | UART | `0x4000_0200` | MMIO |
 | GPIO | `0x4000_0300` | MMIO |
-| Shared BRAM | `0x8000_0000` + | Image and accelerator buffer, accessed on the CPU/DMA port |
+| Shared BRAM | `0x8000_0000` and up | image and accelerator buffer, CPU/DMA port |
 
-> Frame-controller registers: see `rtl/accelerators.v` and `rtl/riscv_soc.v` for the current offsets. The table above covers the base MMIO decode.
+Frame controller offsets are in `rtl/accelerators.v` and `rtl/riscv_soc.v`.
 
 <details>
-<summary><b>Peripheral register maps</b></summary>
+<summary>Peripheral registers</summary>
 
-**CNN** (`0x4000_0100`)
-
-| Offset | Register | Description |
-|:--|:--|:--|
-| `0x00` | CTRL | bit 0 start, bit 1 done flag |
-| `0x04` | STATUS | `{done, busy}` |
-| `0x08` | INPUT_ADDR | input buffer address |
-| `0x0C` | OUTPUT_ADDR | result buffer address |
-| `0x10` | CLASS | predicted class (argmax) |
-| `0x14` | CONF | winning score |
-
-**DCT** (`0x4000_0000`)
+**CNN (`0x4000_0100`)**
 
 | Offset | Register | Description |
-|:--|:--|:--|
-| `0x00` | CTRL / STATUS | write bit 0 to start, read `{done, busy}` |
-| `0x04` | BUSY | busy flag |
-| `0x08` | INPUT_ADDR | 8×8 block source |
-| `0x0C` | OUTPUT_ADDR | coefficient destination |
+|---|---|---|
+| 0x00 | CTRL | bit 0 start, bit 1 done |
+| 0x04 | STATUS | `{done, busy}` |
+| 0x08 | INPUT_ADDR | input buffer address |
+| 0x0C | OUTPUT_ADDR | result buffer address |
+| 0x10 | CLASS | predicted class (argmax) |
+| 0x14 | CONF | winning score |
 
-**UART** (`0x4000_0200`)
+**DCT (`0x4000_0000`)**
 
 | Offset | Register | Description |
-|:--|:--|:--|
-| `0x0` | DATA | write: transmit byte, read: receive byte |
-| `0x4` | STATUS | `{rx_valid, tx_busy}` |
+|---|---|---|
+| 0x00 | CTRL / STATUS | write bit 0 to start, read `{done, busy}` |
+| 0x04 | BUSY | busy flag |
+| 0x08 | INPUT_ADDR | 8x8 block source |
+| 0x0C | OUTPUT_ADDR | coefficient destination |
+
+**UART (`0x4000_0200`)**
+
+| Offset | Register | Description |
+|---|---|---|
+| 0x0 | DATA | write: transmit byte, read: receive byte |
+| 0x4 | STATUS | `{rx_valid, tx_busy}` |
 
 </details>
 
----
+## Pipeline hazards
 
-## ⚙️ Accelerators
+- Forwarding from MEM and WB into EX
+- Load-use stall, extended to multi-cycle MMIO reads
+- Multiply and divide stall while the unit is busy
+- Branch and jump flush of IF/ID
+- A MEM-stage stall freezes all five stages
 
-**DCT engine.** Loads an 8×8 block from shared BRAM, runs a row pass then a column pass on a multiply-accumulate datapath, and writes the coefficients back.
-
-**CNN engine.** LeNet-5-inspired pipeline on a single shared MAC, with weights streamed from a block-RAM ROM initialised from `mem/lenet5_weights.hex`:
-
-```mermaid
-flowchart LR
-    L[Load] --> C1[Conv1] --> P1[Pool1] --> C2[Conv2] --> P2[Pool2] --> F1[FC1] --> F2[FC2] --> F3[FC3] --> A[Argmax] --> S[Store]
-```
-
----
-
-## 📁 Repository layout
-
-```text
-riscv-soc-edge-vision/
-├── rtl/
-│   ├── riscv_soc.v          top-level integration
-│   ├── riscv_core.v         5-stage pipelined core
-│   ├── riscv_core_pkg.v     pipeline registers, memories, ALU, hazard/forwarding
-│   ├── accelerators.v       DCT, CNN, BRAM arbiter
-│   ├── peripherals.v        UART TX/RX, MMIO controller
-│   └── seg7_display.v       7-segment display driver
-├── tb/
-│   └── tb_riscv_soc.v       system testbench
-├── mem/
-│   ├── firmware.hex         program loaded with $readmemh
-│   ├── lenet5_weights.hex   CNN weights
-│   └── digit5_32x32.hex     sample digit-5 test image
-├── constraints/
-│   └── riscv_soc.xdc        Blackboard pin and clock constraints
-├── docs/
-│   └── digit5_preview.png   preview of the test image
-└── .gitignore
-```
-
----
-
-## ▶️ Running the simulation
-
-1. Create a Vivado project for part `xc7z007sclg400-1`.
-2. Add everything in `rtl/` as design sources and `constraints/riscv_soc.xdc` as a constraint.
-3. Add `tb/tb_riscv_soc.v` as the simulation source.
-4. Make the files in `mem/` reachable by `$readmemh`. Either set `FIRMWARE_FILE` and `WEIGHT_FILE` to full paths, or copy the `.hex` files into the simulation working directory. A wrong working directory is the most common cause of an all-zero run.
-5. Run behavioral simulation.
-
----
-
-## 📊 Results
-
-| Metric | Value |
-|:--|:--|
-| Target board | Real Digital Blackboard Rev D |
-| FPGA part | `xc7z007sclg400-1` (XC7Z007S, CLG400) |
-| Board input clock | 100 MHz (pin H16) |
-| Synthesis system clock | 75 MHz configured |
-| LUT / FF / DSP / BRAM | Not reported |
-| Maximum clock frequency | Not established |
-| Cycles per inference | Not measured |
-| Dataset accuracy | Not measured |
-| Simulation | Sample inference observed in XSim: class 5 (digit-5 image) |
-
-The testbench prints a class for the sample image but does not compare it to a reference model, so this is a sample result, not formal end-to-end verification. Physical FPGA validation is not yet done.
-
----
-
-## 🐞 Debugging notes
+## Debugging notes
 
 Bugs found during bring-up, each isolated from waveforms.
 
 <details>
-<summary><b>JAL and JALR target</b></summary>
+<summary>JAL and JALR target</summary>
 
-The jump target used an ALU control code shared by JAL and JALR, so JAL used a register value instead of `ex_pc + imm`. **Fix:** decode `id_is_jalr` from the opcode in ID, pipeline it as `ex_is_jalr`, and use it in the `branch_target` mux.
+The jump target used an ALU control code shared by JAL and JALR, so JAL used a register value instead of `ex_pc + imm`. Fix: decode `id_is_jalr` from the opcode in ID, pipeline it as `ex_is_jalr`, and use it in the `branch_target` mux.
 </details>
 
 <details>
-<summary><b>MMIO and shared-BRAM stall race</b></summary>
+<summary>MMIO and shared-BRAM stall race</summary>
 
-`mmio_stall` asserted one cycle late, so EX/MEM advanced and overwrote results before the freeze took effect. **Fix:** a combinational `mmio_start` wire ORed into the stall, plus a `mmio_just_done` guard to prevent a retrigger deadlock on release. The shared-BRAM path uses the same pattern with `shared_stall` and `shared_just_done`.
+`mmio_stall` asserted one cycle late, so EX/MEM advanced and overwrote results before the freeze took effect. Fix: a combinational `mmio_start` wire ORed into the stall, plus a `mmio_just_done` guard against a retrigger deadlock on release. The shared-BRAM path uses the same pattern with `shared_stall` and `shared_just_done`.
 </details>
 
 <details>
-<summary><b>MMIO controller double transaction</b></summary>
+<summary>MMIO controller double transaction</summary>
 
-The controller started a second spurious transaction when `mmio_request` was still high in the cycle `mmio_ready` cleared `pending`, so reads returned the previous value. **Fix:** register `mmio_request` and start a transaction only on its rising edge.
+The controller started a second transaction when `mmio_request` was still high in the cycle `mmio_ready` cleared `pending`, so reads returned the previous value. Fix: register `mmio_request` and start only on its rising edge.
 </details>
 
 <details>
-<summary><b>Instruction fetch and PC misalignment</b></summary>
+<summary>Instruction fetch and PC misalignment</summary>
 
-A synchronous instruction-memory read made `instr_o` lag `pc` by one cycle, which dropped instructions under stall. **Fix:** combinational read using distributed RAM.
+A synchronous instruction-memory read made `instr_o` lag `pc` by one cycle, which dropped instructions under stall. Fix: combinational read using distributed RAM.
 </details>
 
-**Takeaways**
+Takeaways: a stall that depends on a registered signal leaves a one-cycle window where stages advance wrongly; decode jump type from the opcode; check the waveform before changing logic.
 
-- A stall that depends on a registered signal leaves a one-cycle window where stages advance incorrectly.
-- Jump type must be decoded from the opcode, not inferred from shared control codes.
-- Check the waveform before changing logic.
+## Repository layout
 
----
+```
+rtl/          Verilog sources
+tb/           tb_riscv_soc.v (UART in, class out)
+constraints/  riscv_soc.xdc for the Blackboard
+mem/          firmware.hex, lenet5_weights.hex, digit0..9 test images
+sw/           fpga_test.py (UART host script)
+docs/         banner, block diagram, figures
+```
 
-## 🛣 Roadmap
+## Run the simulation
 
-- [x] 5-stage core, UART, shared BRAM, MMIO
-- [x] Fixes for JAL/JALR, stall races, fetch alignment, MMIO double transaction
-- [x] Behavioral simulation of the full pipeline on a digit-5 sample
-- [ ] Reference-model comparison in the testbench
-- [ ] FPGA synthesis and implementation on the Blackboard
-- [ ] Timing and resource report
-- [ ] Physical validation on hardware
-- [ ] Accuracy measurement on a dataset
+1. Create a Vivado project. Add `rtl/*.v` as design sources and `tb/tb_riscv_soc.v` as a simulation source.
+2. Add `mem/firmware.hex` and `mem/lenet5_weights.hex` to the project so `$readmemh` finds them.
+3. In `tb/tb_riscv_soc.v`, set the image path to a file in `mem/`.
+4. Run behavioural simulation. The testbench sends 1024 bytes over UART and prints the received class.
 
----
+## Run on the board
 
-## 📚 References
+1. Target `xc7z007sclg400-1`. Add `constraints/riscv_soc.xdc`, synthesise, implement, generate the bitstream and program the PL.
+2. Connect a 3.3 V USB-serial adapter to Pmod B: FPGA RX is D19 (JB1) and FPGA TX is D20. Reset is BTN0 (W14).
+3. Install pyserial and send an image:
 
-- Design and Implementation of a Flexible CNN Accelerator for Fast Real-Time Object Detection on FPGA
-- An Efficient Heterogeneous SoC with Reconfigurable CNN Accelerator for Edge Processing
-- The Inference Operation Optimization of an Improved LeNet-5 CNN and its FPGA Hardware Implementation
-- FPGA Implementation of MAC Unit for Artificial Neural Network Accelerators
-- Effective Hardware Accelerator for 2D DCT/IDCT Using Improved Loeffler Architecture
-- VLSI Design Course with FPGA Implementation of Pipelined RISC-V Processor
-- Hardware/Software Co-Design of Cryptographic SoC Based on RISC-V Virtual Prototype
-- Physical Design of RISC-V based System-on-Chip using OpenLane
-- SLMLET: A RISC-V Processor SoC with Tightly-Coupled Area-Efficient eFPGA Blocks
-- A Comprehensive Survey of Clock-Gating Techniques for Low-Power VLSI Design
-- Power-Efficient Instruction-Aware Clock Gating for RISC-V Based PicoSoC Design
-- Design and Implementation of Ultra-Low Power Consumption for High-Performance SoC
+```
+pip install pyserial
+python sw/fpga_test.py --port COM8 --image mem/digit5_32x32.hex
+```
 
----
+The script prints the raw byte and `PREDICTED DIGIT`. The same digit appears on the 7-segment display.
 
-<div align="center">
+## References
 
-**A S Prajwal Bhat** · FPGA, RTL and Embedded Systems
-[GitHub](https://github.com/AS-Prajwal-Bhat)
+The design draws on published work on RISC-V SoCs, CNN accelerators, MAC units, DCT hardware and clock gating, including LeNet-5 FPGA implementations and the Loeffler DCT architecture.
 
-</div>
+## Team
+
+A S Prajwal Bhat and team, B.E. ECE, BIT Bengaluru.
+
+## Contact
+
+[Portfolio](https://as-prajwal-bhat.github.io/AS_Prajwal_Bhat/) · [GitHub](https://github.com/AS-Prajwal-Bhat)
