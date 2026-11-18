@@ -8,6 +8,8 @@
 
 module tb_riscv_soc;
 
+    localparam EXPECTED = 5; // 5 for digit5_mnist_32x32.hex; use 3 for digit3_32x32.hex
+
     // ---- Clock & Reset ----
     reg clk;
     reg rst;
@@ -82,13 +84,19 @@ module tb_riscv_soc;
  reg [7:0] test_image [0:1023];
   integer i, r, c ;
   initial begin
-    $readmemh("digit5_32x32.hex", test_image);
+    // ---- Image file: EDIT THIS PATH to where your hex file really lives.
+    // Use an ABSOLUTE path with forward slashes: XSim resolves relative paths
+    // from <project>.sim/sim_1/behav/xsim, NOT from your source folder.
+    for (i = 0; i < 1024; i = i + 1) test_image[i] = 8'hEE;   // sentinel
+    $readmemh("D:/Major_Project/mjp_final/digit3_32x32.hex", test_image);
+    if (test_image[0] === 8'hEE) begin
+        $display("**** ERROR: image file NOT loaded - check the path in $readmemh ****");
+        $display("**** (test_image still holds the 8'hEE sentinel)                 ****");
+    end
     $display("PIXEL 0   = %0d", test_image[0]);
     $display("PIXEL 100 = %0d", test_image[100]);
     $display("PIXEL 500 = %0d", test_image[500]);
-
-    $finish;
-    $display("[TB] Loaded digit5_32x32.hex (32x32 = 1024 pixels)");
+    $display("[TB] Loaded digit3_32x32.hex (32x32 = 1024 pixels)");
     $display("[TB] Preview of image (thresholded): #=bright, .=dark");
     for (r = 0; r < 32; r = r + 1) begin
       $write("  ");
@@ -139,8 +147,8 @@ end
 integer j;   // ← add this at module level alongside integer i
 
 initial begin
-    $dumpfile("tb_riscv_soc.vcd");
-    $dumpvars(0, tb_riscv_soc);
+    // $dumpfile("tb_riscv_soc.vcd");  // disabled: full-design dump is multi-GB
+    // $dumpvars(0, tb_riscv_soc);
 $display("*** MARKER: TESTBENCH RECOMPILED ***");
     uart_rx = 1;
     rst = 1;
@@ -186,7 +194,10 @@ $display("[TB] All 1024 bytes sent. Waiting for DCT (16 blocks) + CNN...");
                 9: $display("[TB] Predicted: 9 (Nine)");
                 default: $display("[TB] Unexpected: 0x%02h", received_byte);
             endcase
-            $display("[TB] PASS - End-to-end pipeline verified!");
+            if (received_byte == 5)
+                $display("[TB] PASS - got 5");
+            else
+                $display("[TB] FAIL - got %0d, expected 5", received_byte);
             disable pipeline_fork;
         end
         begin
@@ -542,7 +553,6 @@ always @(posedge clk) begin
         $display("========================================");
     end
 end
-
 endmodule
 // ============================================================================
 // END OF TESTBENCH

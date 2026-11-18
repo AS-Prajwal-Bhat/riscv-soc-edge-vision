@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 540" width="1140" height="540" role="img" aria-label="SoC block diagram">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#4ade80"/>
+    </marker>
+  </defs>
+  <rect width="1140" height="540" fill="#060d0a"/>
+  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g fill="#0d1a14" stroke="#1f3a2e" stroke-width="1.5">
+      <rect x="30" y="60" width="190" height="64" rx="10"/>
+      <rect x="30" y="190" width="190" height="64" rx="10"/>
+      <rect x="300" y="60" width="210" height="130" rx="10"/>
+      <rect x="300" y="250" width="210" height="64" rx="10"/>
+      <rect x="700" y="30" width="210" height="62" rx="10"/>
+      <rect x="700" y="130" width="210" height="62" rx="10"/>
+      <rect x="700" y="230" width="210" height="62" rx="10"/>
+      <rect x="980" y="110" width="100" height="200" rx="10"/>
+      <rect x="980" y="340" width="100" height="60" rx="10"/>
+      <rect x="700" y="400" width="210" height="62" rx="10"/>
+    </g>
+    <g fill="#e6f5ec" font-size="16" font-weight="600">
+      <text x="125" y="88">Host PC</text>
+      <text x="125" y="218">UART peripheral</text>
+      <text x="405" y="96">RV32I core</text>
+      <text x="405" y="278">MMIO controller</text>
+      <text x="805" y="56">Frame controller</text>
+      <text x="805" y="156">DCT accelerator</text>
+      <text x="805" y="256">CNN accelerator</text>
+      <text x="1030" y="190">Shared</text>
+      <text x="1030" y="210">BRAM</text>
+      <text x="1030" y="366">Weight ROM</text>
+      <text x="805" y="426">7-segment, LEDs</text>
+    </g>
+    <g fill="#7fa592" font-size="13">
+      <text x="125" y="108">fpga_test.py</text>
+      <text x="125" y="238">115200 baud, 8N1</text>
+      <text x="405" y="120">5-stage pipeline</text>
+      <text x="405" y="140">forwarding, hazard unit</text>
+      <text x="405" y="160">MUL, MULH, MULHSU, MULHU</text>
+      <text x="405" y="298">address decode, stalls</text>
+      <text x="805" y="76">16 DCT blocks, then CNN</text>
+      <text x="805" y="176">8x8, row then column</text>
+      <text x="805" y="276">LeNet-5, int8, 32x32 input</text>
+      <text x="1030" y="232">4096 x 32</text>
+      <text x="1030" y="252">dual port</text>
+      <text x="1030" y="388">61,706 int8</text>
+      <text x="805" y="446">predicted digit</text>
+    </g>
+    <g stroke="#4ade80" stroke-width="2" fill="none" marker-end="url(#a)" marker-start="url(#a)">
+      <line x1="125" y1="126" x2="125" y2="188"/>
+      <polyline points="220,222 260,222 260,282 298,282"/>
+      <line x1="405" y1="192" x2="405" y2="248"/>
+      <line x1="805" y1="94" x2="805" y2="128" marker-start="none"/>
+      <line x1="912" y1="161" x2="978" y2="161"/>
+      <line x1="912" y1="261" x2="978" y2="261"/>
+    </g>
+    <g stroke="#4ade80" stroke-width="2" fill="none">
+      <polyline points="510,282 570,282 570,61"/>
+      <line x1="570" y1="161" x2="698" y2="161" marker-end="url(#a)"/>
+      <line x1="570" y1="261" x2="698" y2="261" marker-end="url(#a)"/>
+      <line x1="570" y1="61" x2="698" y2="61" marker-end="url(#a)"/>
+    </g>
+    <g stroke="#4ade80" stroke-width="2" fill="none" marker-end="url(#a)">
+      <polyline points="980,370 860,370 860,294"/>
+      <polyline points="750,294 750,398"/>
+    </g>
+    <g stroke="#7fa592" stroke-width="2" fill="none" stroke-dasharray="6 5" marker-end="url(#a)">
+      <polyline points="405,316 405,500 1105,500 1105,210 1082,210"/>
+    </g>
+    <g fill="#7fa592" font-size="12">
+      <text x="560" y="330" text-anchor="start">MMIO bus</text>
+      <text x="425" y="470" text-anchor="start">DMA window: CPU reads and writes shared BRAM</text>
+      <text x="140" y="160" text-anchor="start">TX, RX pins</text>
+      <text x="415" y="224" text-anchor="start">loads and stores</text>
+    </g>
+    <rect x="30" y="350" width="230" height="112" rx="10" fill="#0a140f" stroke="#1f3a2e"/>
+    <g font-size="13" text-anchor="start">
+      <text x="46" y="376" fill="#4ade80" font-weight="600">Board</text>
+      <text x="46" y="394" fill="#7fa592">Blackboard, Zynq-7007S</text>
+      <text x="46" y="416" fill="#4ade80" font-weight="600">Clock</text>
+      <text x="46" y="434" fill="#7fa592">75 MHz from MMCM</text>
+      <text x="46" y="452" fill="#7fa592">(100 MHz in simulation)</text>
+    </g>
+  </g>
+</svg>

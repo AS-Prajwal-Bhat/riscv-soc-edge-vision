@@ -131,7 +131,7 @@ module dct_accelerator #(
                 ST_DCTR: begin
                     if (ph == 2'd0) begin
                         // sub-phase 0: register the operands (64:1 mux + cos ROM only)
-                        a_q <= $signed({8'b0, blk_in[{r,k}]}) - 16'sd128;
+                        a_q <= $signed({8'b0, blk_in[{r,k}]});  // FIX: no -128 level shift (CNN weights were trained on unshifted DCT)
                         b_q <= cos_table[{c,k}];
                         ph  <= 2'd1;
                     end else if (ph == 2'd2) begin

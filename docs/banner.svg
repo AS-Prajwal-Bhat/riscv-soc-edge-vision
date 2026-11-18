@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="Pipelined RISC-V SoC for Edge Vision Intelligence">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#0f1f17" stroke-width="1"/>
+    </pattern>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#4ade80"/>
+    </marker>
+  </defs>
+  <rect width="1280" height="360" fill="#060d0a"/>
+  <rect width="1280" height="360" fill="url(#grid)"/>
+  <rect x="64" y="52" width="56" height="4" fill="#4ade80"/>
+  <g font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="64" y="104" font-size="20" fill="#7fa592" letter-spacing="2">B.E. MAJOR PROJECT, BIT BENGALURU</text>
+    <text x="64" y="156" font-size="46" font-weight="700" fill="#e6f5ec">Pipelined RISC-V SoC</text>
+    <text x="64" y="206" font-size="46" font-weight="700" fill="#4ade80">for Edge Vision Intelligence</text>
+    <g font-size="15" text-anchor="middle">
+      <rect x="64" y="252" width="200" height="64" rx="10" fill="#0d1a14" stroke="#1f3a2e"/>
+      <text x="164" y="280" fill="#e6f5ec" font-weight="600" font-size="17">Image in</text>
+      <text x="164" y="301" fill="#7fa592">1024 bytes over UART</text>
+
+      <rect x="304" y="252" width="200" height="64" rx="10" fill="#0d1a14" stroke="#1f3a2e"/>
+      <text x="404" y="280" fill="#e6f5ec" font-weight="600" font-size="17">RV32I core</text>
+      <text x="404" y="301" fill="#7fa592">5 stages, firmware</text>
+
+      <rect x="544" y="252" width="200" height="64" rx="10" fill="#0d1a14" stroke="#1f3a2e"/>
+      <text x="644" y="280" fill="#e6f5ec" font-weight="600" font-size="17">DCT</text>
+      <text x="644" y="301" fill="#7fa592">16 blocks of 8x8</text>
+
+      <rect x="784" y="252" width="200" height="64" rx="10" fill="#0d1a14" stroke="#1f3a2e"/>
+      <text x="884" y="280" fill="#e6f5ec" font-weight="600" font-size="17">LeNet-5 CNN</text>
+      <text x="884" y="301" fill="#7fa592">int8 weights</text>
+
+      <rect x="1024" y="252" width="192" height="64" rx="10" fill="#0d1a14" stroke="#4ade80"/>
+      <text x="1120" y="280" fill="#4ade80" font-weight="600" font-size="17">Digit out</text>
+      <text x="1120" y="301" fill="#7fa592">UART byte, 7-segment</text>
+    </g>
+    <g stroke="#4ade80" stroke-width="2" marker-end="url(#arr)">
+      <line x1="266" y1="284" x2="302" y2="284"/>
+      <line x1="506" y1="284" x2="542" y2="284"/>
+      <line x1="746" y1="284" x2="782" y2="284"/>
+      <line x1="986" y1="284" x2="1022" y2="284"/>
+    </g>
+    <text x="1216" y="104" font-size="15" fill="#7fa592" text-anchor="end">Real Digital Blackboard, Zynq-7007S</text>
+    <text x="1216" y="128" font-size="15" fill="#7fa592" text-anchor="end">Verilog, Vivado, 75 MHz</text>
+  </g>
+</svg>
